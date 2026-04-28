@@ -123,7 +123,7 @@ def train_text_classification_models(df: pd.DataFrame, cfg: dict, models_dir: Pa
     if cfg["text_classification"].get("use_optuna", True):
         def objective(trial):
             c = trial.suggest_float("C", 0.1, 20.0, log=True)
-            lr = LogisticRegression(max_iter=3000, C=c, class_weight="balanced", solver="saga", n_jobs=-1)
+            lr = LogisticRegression(max_iter=3000, C=c, class_weight="balanced", solver="saga")
             lr.fit(x_fit, y_fit)
             pred = lr.predict(x_va)
             return classification_metrics(y_va, pred)["f1"]
@@ -138,7 +138,6 @@ def train_text_classification_models(df: pd.DataFrame, cfg: dict, models_dir: Pa
             C=4.0,
             class_weight="balanced",
             solver="saga",
-            n_jobs=-1,
         ),
         "linear_svm_calibrated": CalibratedClassifierCV(
             estimator=LinearSVC(C=2.0, class_weight="balanced"),
