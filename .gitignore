@@ -1,0 +1,17 @@
+.pytest_cache/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.DS_Store
+
+# Local data/artifacts
+public_crisis_dataset.csv
+project/models/
+project/logs/
+project/__pycache__/
+
+# Virtual environments
+.venv/
+venv/
+env/
