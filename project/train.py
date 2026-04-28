@@ -1,6 +1,7 @@
 import argparse
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 import yaml
 
@@ -8,6 +9,37 @@ from src.evaluation import format_detailed_classification_summary, save_metrics
 from src.model_training import train_credibility_engine, train_forecasting_models, train_text_classification_models
 from src.preprocessing import ensure_dataframe_schema
 from src.utils import setup_logging
+
+
+def _build_fallback_dataset() -> pd.DataFrame:
+    crisis_templates = {
+        "flood": "flood water rising heavy rain rescue boats evacuate families",
+        "fire": "wildfire smoke flames spreading evacuate houses emergency response",
+        "earthquake": "earthquake tremors building damage aftershocks rescue operation",
+        "pandemic": "infection outbreak hospital cases mask isolation medical alert",
+        "industrial_accident": "chemical leak factory blast toxic smoke emergency control",
+    }
+    rows = []
+    rng = np.random.default_rng(42)
+    years = [2019, 2020, 2021, 2022, 2023]
+    row_id = 1
+    for year in years:
+        for crisis_type, text in crisis_templates.items():
+            for i in range(60):
+                rows.append(
+                    {
+                        "tweet_id": row_id,
+                        "timestamp": f"{year}-{(i % 12) + 1:02d}-{(i % 27) + 1:02d}",
+                        "text": f"{text} region{(i % 7) + 1} report{(i % 11) + 1}",
+                        "crisis_type": crisis_type,
+                        "sentiment": float(rng.uniform(-1, 1)),
+                        "severity_score": int(rng.integers(1, 6)),
+                        "resource_type": ["rescue_team", "ambulance", "fire_truck", "medical_unit"][i % 4],
+                        "availability_status": ["Available", "In Use", "Unavailable"][i % 3],
+                    }
+                )
+                row_id += 1
+    return pd.DataFrame(rows)
 
 
 def run_training(config_path: str) -> None:
@@ -21,7 +53,11 @@ def run_training(config_path: str) -> None:
     if not data_path.is_absolute():
         data_path = root.parent / data_path
 
-    df = pd.read_csv(data_path)
+    if data_path.exists():
+        df = pd.read_csv(data_path)
+    else:
+        print(f"Warning: dataset not found at '{data_path}'. Using built-in fallback dataset.")
+        df = _build_fallback_dataset()
     df = ensure_dataframe_schema(df)
     models_dir = root / "models"
     models_dir.mkdir(parents=True, exist_ok=True)
