@@ -1,6 +1,7 @@
 from pathlib import Path
 import subprocess
 import sys
+import time
 
 import numpy as np
 import pandas as pd
@@ -46,23 +47,51 @@ def load_models():
     return out
 
 
-def _run_training_from_app() -> bool:
+def _missing_model_keys(models: dict) -> list[str]:
+    return [key for key, value in models.items() if value is None]
+
+
+def _run_training_from_app(show_logs: bool = True) -> bool:
     cmd = [sys.executable, str(ROOT / "train.py"), "--config", str(ROOT / "config.yaml")]
-    with st.spinner("Training models... this may take a few minutes."):
-        proc = subprocess.run(cmd, cwd=str(ROOT), capture_output=True, text=True)
-    if proc.returncode == 0:
+    st.info("Training models... this may take a few minutes.")
+    logs = []
+    log_box = st.empty() if show_logs else None
+    with subprocess.Popen(
+        cmd,
+        cwd=str(ROOT),
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        bufsize=1,
+    ) as proc:
+        while True:
+            line = proc.stdout.readline() if proc.stdout is not None else ""
+            if line:
+                logs.append(line.rstrip("\n"))
+                if show_logs and log_box is not None:
+                    log_box.code("\n".join(logs[-120:]) or "Starting training...")
+            elif proc.poll() is not None:
+                break
+            else:
+                time.sleep(0.1)
+        return_code = proc.wait()
+
+    captured = "\n".join(logs).strip() or "No output captured."
+    if return_code == 0:
         st.success("Model training completed. Reloading artifacts.")
         return True
     st.error("Training failed. Check details below.")
-    st.code(proc.stderr or proc.stdout or "No output captured.")
+    st.code(captured)
     return False
 
 
-def _missing_artifact_ui():
+def _missing_artifact_ui(models):
+    missing = _missing_model_keys(models)
     st.warning("Required model artifacts are missing.")
+    st.caption(f"Missing: {', '.join(missing)}")
     st.caption("Click below to train all models and enable Prediction/Credibility/Forecast pages.")
     if st.button("Train Models Now", type="primary"):
-        if _run_training_from_app():
+        if _run_training_from_app(show_logs=True):
             st.rerun()
 
 
@@ -78,7 +107,7 @@ def page_upload_predict(models):
     st.header("Upload CSV/Text")
     clf = models["clf"]
     if clf is None:
-        _missing_artifact_ui()
+        _missing_artifact_ui(models)
         return
     text = st.text_area("Real-time text prediction")
     if text.strip():
@@ -101,7 +130,7 @@ def page_disaster_prediction(df: pd.DataFrame, models):
     st.header("Disaster Prediction")
     clf = models["clf"]
     if clf is None:
-        _missing_artifact_ui()
+        _missing_artifact_ui(models)
         return
     sample = st.selectbox("Choose sample text", df["text"].astype(str).head(500).tolist())
     if st.button("Predict class"):
@@ -139,7 +168,7 @@ def page_credibility(models):
     st.header("Credibility Score")
     cred = models["cred"]
     if cred is None:
-        _missing_artifact_ui()
+        _missing_artifact_ui(models)
         return
     source_verified = st.checkbox("Source verified", True)
     duplicate_content = st.checkbox("Duplicate content", False)
@@ -168,7 +197,7 @@ def page_forecast(models):
     st.header("Forecast Dashboard")
     bundle = models["forecast"]
     if bundle is None:
-        _missing_artifact_ui()
+        _missing_artifact_ui(models)
         return
     future = bundle["future_forecast"]
     st.plotly_chart(px.line(future, x="year", y="predicted_fatalities", title="Next 5-year fatalities forecast"), use_container_width=True)
@@ -251,6 +280,14 @@ def page_metrics():
 def main():
     df = load_data()
     models = load_models()
+    missing = _missing_model_keys(models)
+    if missing and not st.session_state.get("auto_train_attempted", False):
+        st.session_state["auto_train_attempted"] = True
+        st.info("Model artifacts not found. Starting one-time auto training...")
+        if _run_training_from_app(show_logs=True):
+            st.rerun()
+        st.warning("Auto training did not complete. You can retry with 'Train Models Now'.")
+
     page = st.sidebar.radio(
         "Navigation",
         [
