@@ -20,5 +20,4 @@ torch
 transformers
 datasets
 accelerate
-tensorflow
 pytest
